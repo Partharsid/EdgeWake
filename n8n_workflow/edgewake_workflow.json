@@ -1,0 +1,346 @@
+{
+  "name": "EdgeWake Forest Guardian",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "edgewake",
+        "options": {
+          "binaryData": true,
+          "rawBody": true
+        },
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Receive Alert",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "edgewake-alert"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-alert-type",
+              "name": "alert_type",
+              "value": "={{ $json.body.alert_type || 'Unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "set-device-id",
+              "name": "device_id",
+              "value": "={{ $json.body.device_id || 'UNKNOWN' }}",
+              "type": "string"
+            },
+            {
+              "id": "set-location",
+              "name": "location",
+              "value": "={{ $json.body.location || 'Unknown Location' }}",
+              "type": "string"
+            },
+            {
+              "id": "set-rms",
+              "name": "rms_energy",
+              "value": "={{ $json.body.rms_energy || '0' }}",
+              "type": "string"
+            },
+            {
+              "id": "set-timestamp",
+              "name": "received_at",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "parse-fields",
+      "name": "Parse Alert Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.alert_type }}",
+                    "rightValue": "Fire",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Fire Alert"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.alert_type }}",
+                    "rightValue": "Intruder",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Intruder Alert"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.alert_type }}",
+                    "rightValue": "Vibration",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Vibration Alert"
+            }
+          ],
+          "fallbackOutput": {
+            "renameOutput": true,
+            "outputKey": "Other Alert"
+          }
+        }
+      },
+      "id": "alert-router",
+      "name": "Route by Alert Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "name": "EdgeWake_Alerts",
+        "driveId": { "__rl": true, "value": "myDrive", "mode": "list" },
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list"
+        },
+        "options": {
+          "originalFilename": "={{ 'FIRE_' + $json.device_id + '_' + $now.format('yyyy-MM-dd_HH-mm-ss') + '.jpg' }}"
+        }
+      },
+      "id": "gdrive-fire",
+      "name": "Save to Google Drive (Fire)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [920, 180],
+      "notes": "Configure your Google Drive credentials in n8n settings.\nCreate a folder called 'EdgeWake_Alerts' in your Google Drive."
+    },
+    {
+      "parameters": {
+        "name": "EdgeWake_Alerts",
+        "driveId": { "__rl": true, "value": "myDrive", "mode": "list" },
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list"
+        },
+        "options": {
+          "originalFilename": "={{ 'INTRUDER_' + $json.device_id + '_' + $now.format('yyyy-MM-dd_HH-mm-ss') + '.jpg' }}"
+        }
+      },
+      "id": "gdrive-intruder",
+      "name": "Save to Google Drive (Intruder)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [920, 420],
+      "notes": "Uses same folder as fire alerts but with different filename prefix."
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🔥 **CRITICAL ALERT: FIRE DETECTED**\n\n📍 Location: {{ $json.location }}\n🔧 Device: {{ $json.device_id }}\n🎙️ Audio RMS: {{ $json.rms_energy }}\n🕐 Time: {{ $json.received_at }}\n\n⚠️ Immediate attention required!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-fire",
+      "name": "Telegram Alert (Fire)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1160, 100],
+      "notes": "Set up your Telegram Bot:\n1. Talk to @BotFather on Telegram\n2. Create a bot with /newbot\n3. Copy the API token\n4. Add it as credential in n8n\n5. Replace YOUR_TELEGRAM_CHAT_ID with your chat ID\n   (talk to @userinfobot to find it)"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🚨 **INTRUDER ALERT**\n\n📍 Location: {{ $json.location }}\n🔧 Device: {{ $json.device_id }}\n🎙️ Audio RMS: {{ $json.rms_energy }}\n🕐 Time: {{ $json.received_at }}\n\n👁️ Unauthorized activity detected!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-intruder",
+      "name": "Telegram Alert (Intruder)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1160, 340]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "operation": "sendPhoto",
+        "file": "={{ $binary.image }}",
+        "caption": "=📸 Evidence photo from {{ $json.device_id }} at {{ $json.location }}"
+      },
+      "id": "telegram-fire-photo",
+      "name": "Send Fire Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1160, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "operation": "sendPhoto",
+        "file": "={{ $binary.image }}",
+        "caption": "=📸 Evidence photo from {{ $json.device_id }} at {{ $json.location }}"
+      },
+      "id": "telegram-intruder-photo",
+      "name": "Send Intruder Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1160, 440]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=ℹ️ **GENERAL ALERT**\n\nType: {{ $json.alert_type }}\n📍 Location: {{ $json.location }}\n🔧 Device: {{ $json.device_id }}\n🕐 Time: {{ $json.received_at }}\n\nReview required.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-other",
+      "name": "Telegram Alert (Other)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [920, 580]
+    },
+    {
+      "parameters": {
+        "name": "EdgeWake_Alerts",
+        "driveId": { "__rl": true, "value": "myDrive", "mode": "list" },
+        "folderId": {
+          "__rl": true,
+          "value": "root",
+          "mode": "list"
+        },
+        "options": {
+          "originalFilename": "={{ 'VIBRATION_' + $json.device_id + '_' + $now.format('yyyy-MM-dd_HH-mm-ss') + '.jpg' }}"
+        }
+      },
+      "id": "gdrive-vibration",
+      "name": "Save to Google Drive (Vibration)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [920, 700],
+      "notes": "Stores evidence photos for vibration/sound alerts."
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=📳 **ABNORMAL VIBRATION / SOUND DETECTED**\n\n📍 Location: {{ $json.location }}\n🔧 Device: {{ $json.device_id }}\n🎙️ Audio RMS: {{ $json.rms_energy }}\n🕐 Time: {{ $json.received_at }}\n\n🌲 Possible illegal logging, landslide, or structural disturbance!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-vibration",
+      "name": "Telegram Alert (Vibration)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1160, 620]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "operation": "sendPhoto",
+        "file": "={{ $binary.image }}",
+        "caption": "=📸 Vibration alert evidence from {{ $json.device_id }} at {{ $json.location }}"
+      },
+      "id": "telegram-vibration-photo",
+      "name": "Send Vibration Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1160, 720]
+    }
+  ],
+  "connections": {
+    "Webhook - Receive Alert": {
+      "main": [
+        [{ "node": "Parse Alert Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Alert Data": {
+      "main": [
+        [{ "node": "Route by Alert Type", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route by Alert Type": {
+      "main": [
+        [{ "node": "Save to Google Drive (Fire)", "type": "main", "index": 0 }],
+        [{ "node": "Save to Google Drive (Intruder)", "type": "main", "index": 0 }],
+        [{ "node": "Save to Google Drive (Vibration)", "type": "main", "index": 0 }],
+        [{ "node": "Telegram Alert (Other)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Save to Google Drive (Fire)": {
+      "main": [
+        [
+          { "node": "Telegram Alert (Fire)", "type": "main", "index": 0 },
+          { "node": "Send Fire Photo", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Save to Google Drive (Intruder)": {
+      "main": [
+        [
+          { "node": "Telegram Alert (Intruder)", "type": "main", "index": 0 },
+          { "node": "Send Intruder Photo", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Save to Google Drive (Vibration)": {
+      "main": [
+        [
+          { "node": "Telegram Alert (Vibration)", "type": "main", "index": 0 },
+          { "node": "Send Vibration Photo", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "edgewake-forest-guardian"
+  },
+  "tags": [
+    { "name": "IoT" },
+    { "name": "EdgeWake" },
+    { "name": "ForestGuard" }
+  ]
+}

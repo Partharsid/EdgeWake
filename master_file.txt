@@ -1,0 +1,87 @@
+Project Master File: EdgeWake (Tiered Cascade Guardian)
+1. Executive Summary
+Traditional remote sensors fail because they rely on fixed-schedule cloud communication, which drains their batteries rapidly. EdgeWake is an ultra-low-power, multi-modal edge AI node. It utilizes a "Tiered Cascade" architecture where low-power analog tripwires (flame/gas) are used to wake up high-power verification systems (vision/audio) only when a localized threat is detected. Once verified, the node hands off the alert to an n8n automation engine, ensuring the device spends 99% of its life in deep sleep.
++1
+
+2. The "Tiered Cascade" Architecture Logic
+To avoid crashing the ESP32-CAM and to preserve maximum battery life, the system operates in distinct stages:
+
+Tier 1: Deep Sleep (Near-Zero Power): The ESP32 CPU, Wi-Fi, and Camera are physically powered off. Only the ULP (Ultra Low Power) co-processor and a basic digital Flame Sensor are active.
+
+Tier 2: The Hardware Interrupt: An environmental anomaly occurs (e.g., a fire). The Flame Sensor detects the infrared signature and sends a high voltage to an RTC GPIO pin.
+
+Tier 3: Edge Verification: The voltage spike triggers an ext0 hardware wake-up. The ESP32 powers on and briefly activates the INMP441 Microphone to run a local TinyML model, verifying the acoustic signature of the threat (e.g., crackling fire or chainsaw).
+
+Tier 4: Visual Capture: Once verified by audio, the ESP32 powers the OV2640 camera and captures a single high-resolution JPEG.
+
+Tier 5: Cloud Handoff: The ESP32 briefly connects to Wi-Fi, sends the JPEG and alert metadata to an n8n webhook, and instantly returns to Tier 1 Deep Sleep.
+
+3. Hardware Bill of Materials (BOM) & Wiring Guide
+Microcontroller: ESP32-CAM (with OV2640 camera module).
+
+Programmer: FTDI USB-to-TTL Serial Converter (required to upload code to the ESP32-CAM).
+
+Acoustic Sensor: INMP441 I2S Omnidirectional Microphone.
+
+Environmental Tripwire: Generic Flame Sensor Module (IR Receiver) or MQ-2 Smoke Sensor.
+
+Power: 5V Power Bank (for live demo) or 3.7V 18650 Li-ion battery with a TP4056 charging module.
+
+Critical Wiring Constraints (ESP32-CAM Pinout):
+The ESP32-CAM is notoriously short on available pins because the camera uses most of them. You must wire it exactly like this:
+
+Flame Sensor Data Pin: Connect to GPIO 13 (This is an RTC_GPIO, which is strictly required to wake the ESP32 from Deep Sleep).
+
+INMP441 Mic: * VDD to 3.3V
+
+GND to GND
+
+L/R to GND (sets channel)
+
+WS to GPIO 14
+
+SCK to GPIO 15
+
+SD to GPIO 12
+
+4. Software Stack & Tooling
+A. The Edge Layer (Hardware Code)
+Environment: Arduino IDE (C++).
+
+Core Libraries: esp_sleep.h (for configuring deep sleep), esp_camera.h (for vision capture), driver/i2s.h (for the microphone).
+
+The Sleep Logic (The winning code snippet concept):
+
+C
+// Set GPIO 13 to wake up the ESP32 when the flame sensor goes HIGH
+esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 1); 
+
+// Go to sleep to save battery
+esp_deep_sleep_start(); 
+B. The Automation Layer (n8n Cloud)
+Since the ESP32 needs to save power, we offload all heavy routing, dashboarding, and notifications to an n8n workflow.
+
+Node 1 (Trigger): Webhook Node (Set to listen for a POST request containing multipart form data—the image file and the text alert).
+
+Node 2 (Router/Switch): Routes the flow based on the alert type (e.g., "Fire" goes to emergency channels, "Intruder" goes to security channels).
+
+Node 3 (Action - Storage): Google Drive Node or AWS S3 Node to save the evidence photo securely.
+
+Node 4 (Action - Notification): Telegram Bot Node or Twilio Node to instantly push the photo and alert to the user's phone.
+
+5. The Live Demo Execution Strategy
+To win the hackathon, your pitch must flawlessly demonstrate the transition from zero-power to full-alert.
+
+The Setup: Have the ESP32-CAM plugged into a battery pack on the judges' table. Have a serial monitor visible on your laptop screen showing the device is in "Deep Sleep...".
+
+The Hook: Explain the problem. "Sensors die in the forest because they never stop talking to the cloud. Our system only speaks when spoken to by a disaster."
+
+The Trigger: Pull out a simple cigarette lighter and flick it about 6 inches from the Flame Sensor.
+
+The Awakening: The judges will see the Serial Monitor instantly jump to life: "Hardware Interrupt Detected -> Waking up -> Capturing Image -> Connecting to Wi-Fi -> Sending to n8n..." The camera flash will trigger.
+
+The Impact: Three seconds later, your phone (or a screen displaying your n8n workflow) lights up with a Telegram message containing the exact photo of you holding the lighter, reading "🔥 CRITICAL ALERT: FIRE DETECTED."
+
+The Close: The Serial Monitor immediately goes back to "Entering Deep Sleep..." proving the power-saving cycle is complete.
+
+This architecture handles the hardware, the AI/Data processing, and the cloud workflow. Focus on getting the deep-sleep ext0 wakeup working with a simple LED first, then add the camera, and finally tie it to your n8n webhook.
