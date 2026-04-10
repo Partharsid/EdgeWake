@@ -16,9 +16,7 @@
 #include <driver/i2s.h>
 #include "config.h"
 
-// If you have a trained Edge Impulse model, uncomment and
-// include its header here:
-// #include <Your_Edge_Impulse_inferencing.h>
+#include "src/EdgeWake-Forest-Audio_inferencing/src/EdgeWake-Forest-Audio_inferencing.h"
 
 // I2S port to use (ESP32 has two: I2S_NUM_0, I2S_NUM_1)
 // The camera occupies I2S_NUM_0 internally, so we use I2S_NUM_1.
@@ -163,49 +161,51 @@ bool analyseAudioSimple(const int16_t *buffer, int numSamples) {
 bool analyseAudioTinyML(const int16_t *buffer, int numSamples) {
   Serial.println("[ML] Running TinyML inference...");
 
-  /*
-   * ── Edge Impulse integration point ──
-   *
-   * // 1. Create a signal from the audio buffer
-   * signal_t signal;
-   * int err = numpy::signal_from_buffer(buffer, numSamples, &signal);
-   * if (err != 0) {
-   *   Serial.println("[ML] Signal creation failed");
-   *   return false;
-   * }
-   *
-   * // 2. Run the classifier
-   * ei_impulse_result_t result = { 0 };
-   * err = run_classifier(&signal, &result, false);
-   * if (err != EI_IMPULSE_OK) {
-   *   Serial.printf("[ML] Classifier failed (%d)\n", err);
-   *   return false;
-   * }
-   *
-   * // 3. Evaluate the results
-   * float fireScore      = 0.0;
-   * float chainsawScore  = 0.0;
-   *
-   * for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-   *   Serial.printf("[ML]  %s: %.5f\n",
-   *                 result.classification[ix].label,
-   *                 result.classification[ix].value);
-   *   if (strcmp(result.classification[ix].label, "fire") == 0) {
-   *     fireScore = result.classification[ix].value;
-   *   }
-   *   if (strcmp(result.classification[ix].label, "chainsaw") == 0) {
-   *     chainsawScore = result.classification[ix].value;
-   *   }
-   * }
-   *
-   * // Threat if fire OR chainsaw confidence > 0.6
-   * return (fireScore > 0.6 || chainsawScore > 0.6);
-   */
+  // 1. Create a signal from the audio buffer
+  signal_t signal;
+  int err = numpy::signal_from_buffer((int16_t *)buffer, numSamples, &signal);
+  if (err != 0) {
+    Serial.println("[ML] Signal creation failed");
+    return analyseAudioSimple(buffer, numSamples); // fallback
+  }
 
-  // Placeholder — replace with the code above once your model
-  // library is installed.
-  Serial.println("[ML] TinyML model not yet linked. Falling back to energy.");
-  return analyseAudioSimple(buffer, numSamples);
+  // 2. Run the classifier
+  ei_impulse_result_t result = { 0 };
+  err = run_classifier(&signal, &result, false /* debug */);
+  if (err != EI_IMPULSE_OK) {
+    Serial.printf("[ML] Classifier failed (%d)\n", err);
+    return analyseAudioSimple(buffer, numSamples); // fallback
+  }
+
+  // 3. Print all class scores
+  float fireScore     = 0.0;
+  float chainsawScore = 0.0;
+
+  Serial.println("[ML] Classification results:");
+  for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+    Serial.printf("[ML]   %s: %.4f\n",
+                  result.classification[ix].label,
+                  result.classification[ix].value);
+
+    if (strcmp(result.classification[ix].label, "fire") == 0) {
+      fireScore = result.classification[ix].value;
+    }
+    if (strcmp(result.classification[ix].label, "chainsaw") == 0) {
+      chainsawScore = result.classification[ix].value;
+    }
+  }
+
+  // 4. Threat detected if fire OR chainsaw confidence > 60%
+  bool threat = (fireScore > 0.6 || chainsawScore > 0.6);
+
+  if (threat) {
+    Serial.printf("[ML] ⚠ THREAT detected! fire=%.2f chainsaw=%.2f\n",
+                  fireScore, chainsawScore);
+  } else {
+    Serial.println("[ML] ✓ No threat — background sound.");
+  }
+
+  return threat;
 }
 #endif
 

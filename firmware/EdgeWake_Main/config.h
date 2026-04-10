@@ -84,7 +84,7 @@
 // --- Edge Impulse TinyML toggle ---
 // Set to 1 when you have a trained Edge Impulse model library
 // installed.  Set to 0 to fall back to the simple energy detector.
-#define USE_TINYML_MODEL  0
+#define USE_TINYML_MODEL  1
 
 // ─────────────────────────────────────────────
 //  6.  Alert Metadata

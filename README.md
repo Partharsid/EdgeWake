@@ -17,7 +17,8 @@ EdgeWake is a battery-powered forest surveillance node that **sleeps 99% of the 
 
 - ⚡ **5-Tier Cascade** — Deep Sleep → Hardware Interrupt → Audio Verify → Camera Capture → Cloud Handoff
 - 🔥 **Dual Sensor Wake-Up** — Flame sensor (GPIO 13) + Vibration sensor (GPIO 2) via ext1 multi-pin interrupt
-- 🎙️ **Edge Audio AI** — INMP441 I2S microphone with RMS energy detection + Edge Impulse TinyML support
+- 🧠 **95% Accuracy TinyML** — Audio verification using a 1D Convolutional Neural Network (MFCC features)
+- 🎙️ **Edge AI Verification** — Ultra-fast 7ms on-device inference for fire and chainsaw detection
 - 📷 **Evidence Capture** — OV2640 camera takes JPEG proof before alerting
 - ☁️ **Automated Alerts** — n8n workflow routes alerts to Google Drive + Telegram with photos
 - 🔋 **Ultra-Low Power** — ~115 µA optimized sleep current → 2+ years on a single 18650 battery
@@ -64,7 +65,8 @@ EdgeWake/
 │       ├── config.h             # All tunable parameters
 │       ├── camera_utils.h       # OV2640 camera driver
 │       ├── audio_utils.h        # INMP441 I2S + threat analysis
-│       └── network_utils.h      # WiFi + HTTP POST upload
+│       ├── network_utils.h      # WiFi + HTTP POST upload
+│       └── src/                 # Integrated TinyML Model (Edge Impulse)
 ├── n8n_workflow/
 │   └── edgewake_workflow.json   # Importable n8n automation
 ├── dashboard/
@@ -74,8 +76,10 @@ EdgeWake/
 ├── docs/
 │   ├── WIRING_GUIDE.md          # Pin-by-pin wiring diagram
 │   ├── SETUP_GUIDE.md           # Full deployment instructions
-│   └── BATTERY_ANALYSIS.md      # Research-backed power analysis
-└── PPT_CONTENT.txt              # AI-ready presentation content
+│   ├── BATTERY_ANALYSIS.md      # Research-backed power analysis
+│   └── TINYML_TRAINING_GUIDE.md # Guide for retraining the model
+└── scripts/
+    └── download_training_data.ps1 # Dataset generator
 ```
 
 ---
@@ -125,7 +129,7 @@ Full analysis with formulas and sources: [`docs/BATTERY_ANALYSIS.md`](docs/BATTE
 ## Tech Stack
 
 - **Edge:** Arduino C++ (ESP-IDF: esp_camera, driver/i2s, esp_sleep)
-- **AI:** Edge Impulse TinyML (optional — TFLite Micro)
+- **AI:** Edge Impulse TinyML (1D CNN Model, 95.1% accuracy, 7ms latency)
 - **Cloud:** n8n (Webhook → Switch → Google Drive + Telegram)
 - **Dashboard:** Vanilla HTML5 + CSS3 + JavaScript
 
