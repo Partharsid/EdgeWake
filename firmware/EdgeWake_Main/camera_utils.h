@@ -1,9 +1,8 @@
 /*
  * ============================================================
  *  EdgeWake — Camera Utilities
- *  Handles OV2640 init & single-frame JPEG capture
- *  for the AI-Thinker ESP32-CAM board.
  * ============================================================
+ *  This file sets up the OV2640 camera and takes a picture.
  */
 
 #ifndef CAMERA_UTILS_H
@@ -12,7 +11,8 @@
 #include "esp_camera.h"
 #include "config.h"
 
-// ── AI-Thinker ESP32-CAM pin map ──────────────────────────
+// These are the internal pins used by the camera on the ESP32-CAM board.
+// You do not need to change these!
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -30,13 +30,11 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-/**
- * Initialise the OV2640 camera.
- * Returns true on success.
- */
+// Function to turn on the camera
 bool initCamera() {
   camera_config_t config;
-
+  
+  // Connect all the pins to the configuration
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer   = LEDC_TIMER_0;
   config.pin_d0       = Y2_GPIO_NUM;
@@ -55,85 +53,63 @@ bool initCamera() {
   config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn     = PWDN_GPIO_NUM;
   config.pin_reset    = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG; // We want a standard JPG image
 
-  config.xclk_freq_hz = 20000000;          // 20 MHz XCLK
-  config.pixel_format = PIXFORMAT_JPEG;
-
-  // Use PSRAM if available for larger frame buffers
+  // If the board has extra memory (PSRAM), use it for high quality
   if (psramFound()) {
     config.frame_size   = CAM_FRAME_SIZE;
     config.jpeg_quality = CAM_JPEG_QUALITY;
     config.fb_count     = 2;
     config.grab_mode    = CAMERA_GRAB_LATEST;
     config.fb_location  = CAMERA_FB_IN_PSRAM;
-    Serial.println("[CAM] PSRAM detected — using high-res capture.");
   } else {
-    // No PSRAM: fall back to a smaller frame
+    // If no extra memory, use lower quality
     config.frame_size   = FRAMESIZE_VGA;
     config.jpeg_quality = 12;
     config.fb_count     = 1;
     config.fb_location  = CAMERA_FB_IN_DRAM;
-    Serial.println("[CAM] No PSRAM — falling back to VGA.");
   }
 
+  // Actually start the camera
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("[CAM] Init FAILED (0x%x)\n", err);
+    Serial.println("Camera failed to start!");
     return false;
   }
 
-  // Optional: tweak sensor settings for outdoor clarity
-  sensor_t *s = esp_camera_sensor_get();
-  if (s) {
-    s->set_brightness(s, 1);    // slight brightness boost
-    s->set_contrast(s, 1);
-    s->set_saturation(s, 0);
-    s->set_whitebal(s, 1);      // enable AWB
-    s->set_awb_gain(s, 1);
-    s->set_exposure_ctrl(s, 1); // auto exposure
-    s->set_aec2(s, 1);          // auto exposure DSP
-    s->set_gain_ctrl(s, 1);     // auto gain
-  }
-
-  Serial.println("[CAM] Initialised OK.");
+  Serial.println("Camera is ready!");
   return true;
 }
 
-/**
- * Capture a single JPEG frame.
- * Turns the flash LED on briefly for illumination.
- *
- * Returns a pointer to the camera frame buffer (caller must
- * call esp_camera_fb_return() when done) or NULL on failure.
- */
+// Function to take a picture
 camera_fb_t* capturePhoto() {
-  Serial.println("[CAM] Capturing photo...");
+  Serial.println("Taking a photo...");
 
-  // Turn on flash LED
+  // Turn on the bright white LED so we can see in the dark forest
   pinMode(FLASH_LED_PIN, OUTPUT);
   digitalWrite(FLASH_LED_PIN, HIGH);
-  delay(150);  // brief warm-up for good exposure
+  delay(150); // Give the light a moment to brighten up
 
-  // Discard one frame to let auto-exposure settle
+  // Throw away the first photo (it's often too dark because the camera is adjusting)
   camera_fb_t *discard = esp_camera_fb_get();
   if (discard) {
     esp_camera_fb_return(discard);
   }
 
-  // Capture the real frame
+  // Take the real photo!
   camera_fb_t *fb = esp_camera_fb_get();
 
-  // Turn off flash LED
+  // Turn off the white LED to save battery
   digitalWrite(FLASH_LED_PIN, LOW);
 
   if (!fb) {
-    Serial.println("[CAM] Capture FAILED.");
+    Serial.println("Failed to take photo.");
     return NULL;
   }
 
-  Serial.printf("[CAM] Captured %u bytes (%dx%d)\n",
-                fb->len, fb->width, fb->height);
+  Serial.println("Photo taken successfully!");
   return fb;
 }
 
-#endif // CAMERA_UTILS_H
+#endif

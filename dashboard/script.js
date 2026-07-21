@@ -305,7 +305,7 @@ async function simulateAlert(mode = 'fire') {
   document.getElementById('infoRssi').textContent = '-62 dBm';
   await wait(300);
 
-  serialLog(`[NET] Sending alert (type: ${alertLabel}) to n8n...`);
+  serialLog(`[NET] Sending alert (type: ${alertLabel}) to Telegram...`);
   await wait(700);
   serialLog('[NET] Server responded: 200');
   serialLog('[MAIN] ✅ Alert sent successfully!');

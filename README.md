@@ -1,28 +1,28 @@
-# 🌲 EdgeWake — Tiered Cascade Guardian
+# 🌲 EdgeWake — Tiered Cascade Guardian (Beginner-Friendly Edition)
 
 > Ultra-low-power Edge AI system for real-time forest threat detection.  
 > *"The smartest sensor is the one that knows when NOT to work."*
 
 ![ESP32](https://img.shields.io/badge/ESP32--CAM-AI--Thinker-green?style=flat-square)
-![n8n](https://img.shields.io/badge/Automation-n8n-orange?style=flat-square)
+![Telegram](https://img.shields.io/badge/Alerts-Telegram-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
 ---
 
 ## What is EdgeWake?
 
-EdgeWake is a battery-powered forest surveillance node that **sleeps 99% of the time** and only wakes up when a real threat is detected. It uses a 5-tier cascade architecture to progressively verify threats — from a near-zero-power hardware interrupt, through audio AI verification, to camera capture and cloud notification — all in under 5 seconds.
+EdgeWake is a battery-powered forest surveillance node that **sleeps 99% of the time** and only wakes up when a real threat is detected. It uses a 5-tier cascade architecture to progressively verify threats.
+
+**This is the heavily simplified, beginner-friendly version of EdgeWake.** The code has been rewritten with extensive comments, hardware bugs have been fixed, and complex cloud integrations have been replaced with a simple Telegram bot.
 
 ### Key Features
 
-- ⚡ **5-Tier Cascade** — Deep Sleep → Hardware Interrupt → Audio Verify → Camera Capture → Cloud Handoff
-- 🔥 **Dual Sensor Wake-Up** — Flame sensor (GPIO 13) + Vibration sensor (GPIO 2) via ext1 multi-pin interrupt
-- 🧠 **95% Accuracy TinyML** — Audio verification using a 1D Convolutional Neural Network (MFCC features)
-- 🎙️ **Edge AI Verification** — Ultra-fast 7ms on-device inference for fire and chainsaw detection
-- 📷 **Evidence Capture** — OV2640 camera takes JPEG proof before alerting
-- ☁️ **Automated Alerts** — n8n workflow routes alerts to Google Drive + Telegram with photos
-- 🔋 **Ultra-Low Power** — ~115 µA optimized sleep current → 2+ years on a single 18650 battery
-- 📊 **Live Dashboard** — Glassmorphism-themed monitoring UI with real-time cascade simulation
+- ⚡ **5-Tier Cascade** — Deep Sleep → Hardware Interrupt → Audio Verify → Camera Capture → Telegram
+- 🔥 **Dual Sensor Wake-Up** — Flame sensor (GPIO 13) + Vibration sensor (GPIO 33)
+- 🧠 **TinyML AI** — Audio verification using a 1D Convolutional Neural Network via Edge Impulse
+- 📷 **Evidence Capture** — OV2640 camera takes a JPG photo before alerting
+- ☁️ **Telegram Alerts** — Sends the photo and threat data directly to your phone via Telegram!
+- 🔋 **Ultra-Low Power** — Designed to sleep to save battery.
 
 ---
 
@@ -31,9 +31,9 @@ EdgeWake is a battery-powered forest surveillance node that **sleeps 99% of the 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌───────────────┐     ┌────────────────┐     ┌──────────────┐
 │   TIER 1    │     │    TIER 2    │     │    TIER 3     │     │    TIER 4      │     │    TIER 5    │
-│ Deep Sleep  │────▶│  Hardware    │────▶│    Audio      │────▶│   Camera       │────▶│    Cloud     │
-│   ~10 µA    │     │  Interrupt   │     │ Verification  │     │   Capture      │     │   Handoff    │
-│             │     │  ~20 mA      │     │   ~40 mA      │     │   ~120 mA      │     │   ~160 mA    │
+│ Deep Sleep  │────▶│  Hardware    │────▶│    Audio      │────▶│   Camera       │────▶│  Telegram    │
+│   ~10 µA    │     │  Interrupt   │     │ Verification  │     │   Capture      │     │   Alert      │
+│             │     │              │     │   (AI checks) │     │                │     │              │
 └─────────────┘     └──────────────┘     └───────────────┘     └────────────────┘     └──────────────┘
      ▲                                                                                       │
      └───────────────────────────── Back to Sleep ◀──────────────────────────────────────────┘
@@ -41,97 +41,39 @@ EdgeWake is a battery-powered forest surveillance node that **sleeps 99% of the 
 
 ---
 
-## Hardware BOM
+## Hardware Needed
 
-| Component | Model | Purpose | Cost |
-|:---|:---|:---|:---:|
-| Microcontroller | ESP32-CAM (AI-Thinker) | Main brain + OV2640 camera | ~₹500 |
-| Programmer | FTDI CP2102 USB-to-TTL | Upload firmware | ~₹150 |
-| Microphone | INMP441 I2S MEMS | Audio verification | ~₹200 |
-| Flame Sensor | KY-026 IR Module | Fire detection tripwire | ~₹50 |
-| Vibration Sensor | SW-420 | Vibration/logging tripwire | ~₹40 |
-| Power | 18650 + TP4056 | Battery supply | ~₹200 |
-| **Total** | | | **~₹1,140** |
-
----
-
-## Project Structure
-
-```
-EdgeWake/
-├── firmware/
-│   └── EdgeWake_Main/
-│       ├── EdgeWake_Main.ino    # Main cascade logic
-│       ├── config.h             # All tunable parameters
-│       ├── camera_utils.h       # OV2640 camera driver
-│       ├── audio_utils.h        # INMP441 I2S + threat analysis
-│       ├── network_utils.h      # WiFi + HTTP POST upload
-│       └── src/                 # Integrated TinyML Model (Edge Impulse)
-├── n8n_workflow/
-│   └── edgewake_workflow.json   # Importable n8n automation
-├── dashboard/
-│   ├── index.html               # Monitoring UI
-│   ├── style.css                # Dark glassmorphism theme
-│   └── script.js                # Simulation engine
-├── docs/
-│   ├── WIRING_GUIDE.md          # Pin-by-pin wiring diagram
-│   ├── SETUP_GUIDE.md           # Full deployment instructions
-│   ├── BATTERY_ANALYSIS.md      # Research-backed power analysis
-│   └── TINYML_TRAINING_GUIDE.md # Guide for retraining the model
-└── scripts/
-    └── download_training_data.ps1 # Dataset generator
-```
+| Component | Model | Purpose |
+|:---|:---|:---|
+| Microcontroller | ESP32-CAM (AI-Thinker) | Main brain + camera |
+| Programmer | FTDI CP2102 USB-to-TTL | Upload code to ESP32 |
+| Microphone | INMP441 | AI Audio verification |
+| Flame Sensor | KY-026 | Fire detection tripwire |
+| Vibration Sensor | SW-420 | Logging/chainsaw tripwire |
+| Power | 18650 Battery + TP4056 | Battery supply |
 
 ---
 
 ## Quick Start
 
-### 1. Flash the Firmware
-```bash
-# Open firmware/EdgeWake_Main/EdgeWake_Main.ino in Arduino IDE
-# Board: "AI Thinker ESP32-CAM" | PSRAM: Enabled
-# Edit config.h with your WiFi credentials + n8n webhook URL
-# Upload via FTDI (IO0 → GND during flash)
-```
+### 1. Setup Telegram
+1. Open the Telegram app and search for `@BotFather`.
+2. Type `/newbot`, follow the instructions, and save your **Bot Token**.
+3. Search for `@userinfobot`, type `/start`, and save your **Chat ID**.
 
-### 2. Import n8n Workflow
-```
-Drag n8n_workflow/edgewake_workflow.json into your n8n canvas
-Set up Telegram Bot + Google Drive credentials
-Activate the workflow
-```
+### 2. Configure the Code
+1. Open `firmware/EdgeWake_Main/EdgeWake_Main.ino` in the Arduino IDE.
+2. Open the `config.h` tab.
+3. Put in your WiFi Name, WiFi Password, Telegram Bot Token, and Telegram Chat ID.
 
-### 3. Wire the Hardware
-See [`docs/WIRING_GUIDE.md`](docs/WIRING_GUIDE.md) for the complete pin-by-pin guide.
+### 3. Flash the Firmware
+1. Select Board: "AI Thinker ESP32-CAM".
+2. Turn on PSRAM in the Tools menu.
+3. Connect your FTDI programmer. Connect IO0 to GND.
+4. Click Upload!
 
-### 4. Demo the Dashboard
-```bash
-# Open dashboard/index.html in any browser
-# Click "Simulate Fire" or "Simulate Vibration"
-# Watch the 5-tier cascade execute in real-time
-```
-
----
-
-## Battery Life (Researched)
-
-| Build Level | Sleep Current | Battery Life (3000 mAh) |
-|:---|:---:|:---:|
-| Stock (modules as-is) | ~32.5 mA | ~3 days |
-| Bare sensors (no module boards) | ~2.55 mA | ~5 weeks |
-| Full optimization (LDO swap) | ~115 µA | ~2 years |
-| Solar + optimized | ~115 µA + solar | Indefinite |
-
-Full analysis with formulas and sources: [`docs/BATTERY_ANALYSIS.md`](docs/BATTERY_ANALYSIS.md)
-
----
-
-## Tech Stack
-
-- **Edge:** Arduino C++ (ESP-IDF: esp_camera, driver/i2s, esp_sleep)
-- **AI:** Edge Impulse TinyML (1D CNN Model, 95.1% accuracy, 7ms latency)
-- **Cloud:** n8n (Webhook → Switch → Google Drive + Telegram)
-- **Dashboard:** Vanilla HTML5 + CSS3 + JavaScript
+### 4. Wire the Hardware
+See [`docs/WIRING_GUIDE.md`](docs/WIRING_GUIDE.md) for the complete simple wiring guide.
 
 ---
 

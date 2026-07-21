@@ -1,257 +1,157 @@
 /*
  * ============================================================
- *  EdgeWake — Tiered Cascade Guardian
- *  Main Firmware for ESP32-CAM (AI-Thinker)
+ *  EdgeWake — Simplified Forest Guardian
  * ============================================================
- *
- *  Architecture:
- *    Tier 1 — Deep Sleep  (near-zero power)
- *    Tier 2 — Hardware Interrupt  (flame/vibration → ext1 wake)
- *    Tier 3 — Edge Verification   (INMP441 audio analysis)
- *    Tier 4 — Visual Capture      (OV2640 JPEG snapshot)
- *    Tier 5 — Cloud Handoff       (Wi-Fi → n8n webhook → sleep)
- *
- *  Wake sources (ext1 — multi-pin):
- *    GPIO 13  →  Flame / Smoke Sensor
- *    GPIO 2   →  SW-420 Vibration Sensor
- *
- *  Board:  "AI Thinker ESP32-CAM"
- *  Upload: Via FTDI — connect IO0 to GND during upload,
- *          then remove jumper & reset to run.
- *
- *  Required Libraries (install via Arduino Library Manager):
- *    - ESP32 board package (by Espressif)
- *
- *  No external libraries needed — everything uses
- *  ESP-IDF drivers bundled with the ESP32 Arduino core.
- * ============================================================
+ *  This code protects forests using 5 "Tiers" to save battery.
+ *  It only does work when it absolutely has to.
+ *  
+ *  Read the comments below to understand how it works!
  */
 
 #include "config.h"
 #include "camera_utils.h"
 #include "audio_utils.h"
-#include "network_utils.h"
-
+#include "telegram.h"       // Replaced the old network_utils.h
 #include "esp_sleep.h"
-#include "esp_wifi.h"
 #include "driver/rtc_io.h"
 
-// ─── Boot counter (persists across deep-sleep cycles) ───
+// Track how many times the board has woken up.
+// RTC_DATA_ATTR means this number survives "Deep Sleep".
 RTC_DATA_ATTR int bootCount = 0;
-RTC_DATA_ATTR unsigned long lastTriggerMs = 0;
 
-// ─── Forward declarations ───────────────────────────────
-void enterDeepSleep();
-void printWakeupReason();
-const char* identifyTriggerSource();
-
-// =========================================================
-//  setup()  — runs once on EVERY wake-up (cold boot + wake)
-// =========================================================
 void setup() {
-  Serial.begin(SERIAL_BAUD);
-  delay(200);  // let serial settle
-
+  // Start the serial monitor so we can read messages on the computer
+  Serial.begin(115200);
+  delay(1000); // Wait a second for it to connect
+  
   bootCount++;
-  Serial.println();
-  Serial.println("╔══════════════════════════════════════════╗");
-  Serial.println("║      🌲  EdgeWake — Forest Guard  🌲     ║");
-  Serial.println("╠══════════════════════════════════════════╣");
-  Serial.printf( "║  Boot #%d  |  Device: %-17s  ║\n", bootCount, DEVICE_ID);
-  Serial.println("╚══════════════════════════════════════════╝");
+  Serial.println("\n\n==========================================");
+  Serial.println("🌲 EdgeWake — Forest Guardian Started! 🌲");
+  Serial.print("Boot number: ");
+  Serial.println(bootCount);
+  Serial.println("==========================================");
 
-  printWakeupReason();
-
-  // ── Determine why we woke up ──────────────────────────
+  // -------------------------------------------------------------
+  // TIER 1 & TIER 2: Check why the board woke up
+  // -------------------------------------------------------------
+  // The board was in "Deep Sleep" (Tier 1). Let's see if a sensor 
+  // woke it up (Tier 2), or if you just plugged it in for the first time.
+  
   esp_sleep_wakeup_cause_t wakeReason = esp_sleep_get_wakeup_cause();
-
+  
   if (wakeReason != ESP_SLEEP_WAKEUP_EXT1) {
-    // First boot or unexpected wake — just go to sleep.
-    Serial.println("[MAIN] Cold boot or non-trigger wake. Going to sleep...");
-    enterDeepSleep();
-    return;  // never reached
-  }
-
-  // ═════════════════════════════════════════════════════
-  //  TIER 2 — Hardware Interrupt Triggered!
-  //  Identify WHICH sensor caused the wake-up.
-  // ═════════════════════════════════════════════════════
-  const char *alertType = identifyTriggerSource();
-
-  Serial.printf("⚡ [TIER 2] HARDWARE INTERRUPT DETECTED! Source: %s\n", alertType);
-
-  // De-bounce: ignore re-triggers too close together
-  // (RTC memory persists across sleep cycles)
-  if (lastTriggerMs > 0 && (millis() < DEBOUNCE_MS)) {
-    Serial.println("[MAIN] Debounce active — ignoring this trigger.");
-    enterDeepSleep();
+    // If it wasn't woken up by our sensors (EXT1), it means it's a cold boot.
+    // We don't need to do anything, just go to sleep and wait for a real threat!
+    Serial.println("Just turned on. Nothing to report.");
+    goToDeepSleep();
     return;
   }
 
-  // ═════════════════════════════════════════════════════
-  //  TIER 3 — Edge Verification (Audio Analysis)
-  // ═════════════════════════════════════════════════════
-  Serial.println("🎙️ [TIER 3] Starting audio verification...");
+  // If we are here, a sensor was triggered! Let's find out which one.
+  uint64_t wakeupPins = esp_sleep_get_ext1_wakeup_status();
+  String alertType = "Unknown";
+  
+  // Check if it was the Flame sensor
+  if (wakeupPins & (1ULL << FLAME_SENSOR_PIN)) {
+    Serial.println("🔥 FLAME SENSOR TRIGGERED!");
+    alertType = "Fire";
+  }
+  // Check if it was the Vibration sensor
+  else if (wakeupPins & (1ULL << VIBRATION_SENSOR_PIN)) {
+    Serial.println("📳 VIBRATION SENSOR TRIGGERED!");
+    alertType = "Vibration";
+  }
 
-  bool micOk = initMicrophone();
-  bool threatConfirmed = false;
-
-  if (micOk) {
-    threatConfirmed = verifyThreatAudio();
-    deinitMicrophone();  // free I2S resources before camera
+  // -------------------------------------------------------------
+  // TIER 3: Edge Verification (Listen with the Microphone & AI)
+  // -------------------------------------------------------------
+  // We don't want to send false alarms (like a branch falling).
+  // Let's turn on the microphone and ask the AI if it sounds like danger.
+  
+  bool isRealThreat = false;
+  
+  if (initMicrophone()) {
+    isRealThreat = verifyThreatAudio(); // Asks the AI
+    deinitMicrophone(); // Turn off microphone to save power and free up the pins for the camera
   } else {
-    Serial.println("[MAIN] Mic init failed — assuming threat (fail-open).");
-    threatConfirmed = true;
+    Serial.println("Microphone failed! Assuming it's a real threat just to be safe.");
+    isRealThreat = true;
   }
-
-  if (!threatConfirmed) {
-    Serial.println("[MAIN] Audio says false alarm. Back to sleep.");
-    enterDeepSleep();
+  
+  if (!isRealThreat) {
+    // AI says it's a false alarm!
+    Serial.println("AI says it's a FALSE ALARM. Going back to sleep.");
+    goToDeepSleep();
     return;
   }
 
-  // ═════════════════════════════════════════════════════
-  //  TIER 4 — Visual Capture
-  // ═════════════════════════════════════════════════════
-  Serial.println("📷 [TIER 4] Initialising camera for visual capture...");
-
-  bool camOk = initCamera();
+  // -------------------------------------------------------------
+  // TIER 4: Visual Capture (Take a Photo)
+  // -------------------------------------------------------------
+  // AI confirmed the threat! Now we need picture evidence.
+  
   camera_fb_t *photo = NULL;
-
-  if (camOk) {
+  
+  if (initCamera()) {
     photo = capturePhoto();
   } else {
-    Serial.println("[MAIN] Camera init failed!");
+    Serial.println("Camera failed to start!");
   }
-
-  // ═════════════════════════════════════════════════════
-  //  TIER 5 — Cloud Handoff (Wi-Fi → n8n webhook)
-  // ═════════════════════════════════════════════════════
-  Serial.println("☁️ [TIER 5] Connecting to Wi-Fi for cloud handoff...");
-
-  bool wifiOk = connectWiFi();
-
-  if (wifiOk) {
-    if (photo) {
-      bool sent = sendAlert(photo, alertType, 0);
-      if (sent) {
-        Serial.println("[MAIN] ✅ Alert sent successfully!");
-      } else {
-        Serial.println("[MAIN] ❌ Alert send failed.");
-      }
-    } else {
-      Serial.println("[MAIN] No photo available — sending text-only alert.");
-      // Send a text-only fallback via JSON
-      HTTPClient http;
-      http.begin(WEBHOOK_URL);
-      http.addHeader("Content-Type", "application/json");
-      String json = "{\"alert_type\":\"" + String(alertType) + "\","
-                    "\"device_id\":\"" + String(DEVICE_ID) + "\","
-                    "\"location\":\"" + String(DEVICE_LOCATION) + "\","
-                    "\"error\":\"camera_failed\","
-                    "\"timestamp\":" + String(millis()) + "}";
-      int code = http.POST(json);
-      Serial.printf("[MAIN] Fallback alert response: %d\n", code);
-      http.end();
-    }
-    disconnectWiFi();
-  } else {
-    Serial.println("[MAIN] Wi-Fi failed — alert NOT sent. Going back to sleep.");
-  }
-
-  // Return the camera frame buffer
+  
+  // -------------------------------------------------------------
+  // TIER 5: Cloud Handoff (Send to Telegram)
+  // -------------------------------------------------------------
+  // We have evidence. Turn on WiFi and send a message directly to your phone.
+  
   if (photo) {
+    String message = "🚨 EDGEWAKE ALERT 🚨\n";
+    message += "Danger Detected: " + alertType + "\n";
+    message += "The AI verified this threat. See attached photo.";
+    
+    bool sent = sendAlertToTelegram(photo, message);
+    
+    if (sent) {
+      Serial.println("✅ Alert sent to your phone!");
+    } else {
+      Serial.println("❌ Failed to send alert.");
+    }
+    
+    // Free the camera memory now that we sent it
     esp_camera_fb_return(photo);
-  }
-
-  // Record this trigger time for debounce
-  lastTriggerMs = millis();
-
-  // ═════════════════════════════════════════════════════
-  //  Back to TIER 1 — Deep Sleep
-  // ═════════════════════════════════════════════════════
-  Serial.println("[MAIN] Full cycle complete. Returning to deep sleep...");
-  enterDeepSleep();
-}
-
-// =========================================================
-//  loop()  — never runs (deep-sleep resets the chip)
-// =========================================================
-void loop() {
-  // This function intentionally left empty.
-  // The ESP32 restarts from setup() on every deep-sleep wake.
-}
-
-// =========================================================
-//  Identify which sensor caused the ext1 wake-up
-// =========================================================
-const char* identifyTriggerSource() {
-  uint64_t wakeupBits = esp_sleep_get_ext1_wakeup_status();
-
-  bool flameFired     = (wakeupBits & (1ULL << FLAME_SENSOR_PIN))     != 0;
-  bool vibrationFired = (wakeupBits & (1ULL << VIBRATION_SENSOR_PIN)) != 0;
-
-  if (flameFired && vibrationFired) {
-    Serial.println("[TIER 2] Both FLAME + VIBRATION sensors triggered simultaneously.");
-    return "Fire";  // prioritise fire
-  } else if (flameFired) {
-    Serial.println("[TIER 2] 🔥 Flame / smoke sensor triggered on GPIO 13.");
-    return "Fire";
-  } else if (vibrationFired) {
-    Serial.println("[TIER 2] 📳 Vibration sensor triggered on GPIO 2.");
-    Serial.println("[TIER 2] Abnormal vibration or sound detected!");
-    return "Vibration";
   } else {
-    Serial.printf("[TIER 2] Unknown trigger source (bits: 0x%llx)\n", wakeupBits);
-    return "Unknown";
+    Serial.println("No photo to send! Skipping Telegram.");
   }
+
+  // -------------------------------------------------------------
+  // DONE: Go back to Deep Sleep (Back to Tier 1)
+  // -------------------------------------------------------------
+  goToDeepSleep();
 }
 
-// =========================================================
-//  Helper: Configure ext1 wake-up and enter deep sleep
-// =========================================================
-void enterDeepSleep() {
-  Serial.println("💤 [SLEEP] Configuring ext1 wake-up on GPIO 13 + GPIO 2...");
+void loop() {
+  // This function is never used because the board completely 
+  // turns off during Deep Sleep, and restarts at setup() when it wakes up.
+}
 
-  // Isolate GPIO 12 (I2S SD pin) to prevent current leakage during sleep
-  rtc_gpio_isolate(GPIO_NUM_12);
+// -------------------------------------------------------------
+// HELPER FUNCTION: Go to Deep Sleep
+// -------------------------------------------------------------
+void goToDeepSleep() {
+  Serial.println("Configuring Deep Sleep...");
 
-  // Configure ext1: wake when ANY pin in the bitmask goes HIGH
-  esp_sleep_enable_ext1_wakeup(EXT1_WAKEUP_MASK, ESP_EXT1_WAKEUP_ANY_HIGH);
+  // Tell the ESP32 to wake up if ANY of our sensor pins send a HIGH signal
+  uint64_t wakeMask = (1ULL << FLAME_SENSOR_PIN) | (1ULL << VIBRATION_SENSOR_PIN);
+  esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_HIGH);
 
-  Serial.println("💤 [SLEEP] Entering deep sleep... goodnight. 🌙");
-  Serial.flush();
-  delay(100);
+  // Isolate the microphone pin so it doesn't drain battery while sleeping
+  rtc_gpio_isolate((gpio_num_t)I2S_SD_PIN);
 
+  Serial.println("Sleeping for 5 seconds first so the sensors can settle down...");
+  delay(5000); // Simple fix! This prevents the sensor from immediately waking us up again.
+
+  Serial.println("Entering Deep Sleep... Zzz... 🌙");
+  Serial.flush(); 
+  
+  // Turn off the brain!
   esp_deep_sleep_start();
-
-  // ── Execution never reaches here ──
-}
-
-// =========================================================
-//  Helper: Print human-readable wake-up reason
-// =========================================================
-void printWakeupReason() {
-  esp_sleep_wakeup_cause_t reason = esp_sleep_get_wakeup_cause();
-
-  switch (reason) {
-    case ESP_SLEEP_WAKEUP_EXT0:
-      Serial.println("[WAKE] Cause: EXT0 (Single Pin Interrupt)");
-      break;
-    case ESP_SLEEP_WAKEUP_EXT1:
-      Serial.println("[WAKE] Cause: EXT1 (Multi-Sensor Interrupt)");
-      break;
-    case ESP_SLEEP_WAKEUP_TIMER:
-      Serial.println("[WAKE] Cause: TIMER");
-      break;
-    case ESP_SLEEP_WAKEUP_TOUCHPAD:
-      Serial.println("[WAKE] Cause: TOUCHPAD");
-      break;
-    case ESP_SLEEP_WAKEUP_ULP:
-      Serial.println("[WAKE] Cause: ULP co-processor");
-      break;
-    default:
-      Serial.println("[WAKE] Cause: COLD BOOT (power-on / reset)");
-      break;
-  }
 }
