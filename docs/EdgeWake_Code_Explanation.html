@@ -20,7 +20,7 @@
 <body>
 <div class="container">
   <h1>🌲 EdgeWake: Complete Code Explanation</h1>
-  <p>Welcome to the EdgeWake code explanation guide! This document breaks down exactly how the EdgeWake project works and provides a simple, line-by-line explanation of the code. This is perfect for understanding the project deeply for presentations or reports.</p>
+  <p>Welcome to the EdgeWake code explanation guide! This document breaks down exactly how the EdgeWake project works and provides a simple, line-by-line explanation of every single file in the code. This is perfect for understanding the project deeply for presentations or reports.</p>
 
   <h2>Part 1: How EdgeWake Works (The 5 Tiers)</h2>
   <p>EdgeWake is designed to save battery by remaining completely turned off until something happens. It does this using a <strong>5-Tier Cascade</strong>:</p>
@@ -31,33 +31,34 @@
   <div class="tier-box"><strong>Tier 4 (Visual Capture):</strong> If the AI confirms the danger, the brain turns on the Camera, flashes the LED, and takes a photo as evidence.</div>
   <div class="tier-box"><strong>Tier 5 (Cloud Handoff):</strong> Finally, the brain turns on the WiFi, logs into Telegram, sends the photo directly to your phone, and goes immediately back to Deep Sleep.</div>
 
-  <h2>Part 2: Code Explanation (Line-by-Line)</h2>
+  <h2>Part 2: Code Explanation (File-by-File)</h2>
 
-  <h3>1. The Main Logic (<code>EdgeWake_Main.ino</code>)</h3>
+  <h3>1. Configuration (<code>config.h</code>)</h3>
+  <p>This file acts as a dictionary. It defines the names of the WiFi, the passwords, and which pins connect to which sensors. Having it separate keeps the main code clean.</p>
+
+<pre><code>#define WIFI_SSID       "YOUR_WIFI_SSID"
+#define TELEGRAM_BOT_TOKEN "YOUR_BOT_TOKEN"
+#define TELEGRAM_CHAT_ID   "YOUR_CHAT_ID"</code></pre>
+  <div class="explanation">We define text strings (macros) for the credentials. Whenever the code says <code>WIFI_SSID</code>, it automatically replaces it with your actual WiFi name.</div>
+
+<pre><code>#define FLAME_SENSOR_PIN   GPIO_NUM_13
+#define VIBRATION_SENSOR_PIN  GPIO_NUM_33</code></pre>
+  <div class="explanation">We assign the hardware sensors to specific physical pins on the board. GPIO 13 and 33 were chosen specifically because they are special "RTC Pins" that stay active during Deep Sleep.</div>
+
+
+  <h3>2. The Main Logic (<code>EdgeWake_Main.ino</code>)</h3>
   <p>This file is the "director" that controls the 5 Tiers.</p>
 
-<pre><code>#include "config.h"
-#include "camera_utils.h"
-#include "audio_utils.h"
-#include "telegram.h"
-#include "esp_sleep.h"
-#include "driver/rtc_io.h"</code></pre>
-  <div class="explanation">These lines load our helper files (like camera and telegram) and the built-in ESP32 tools for controlling sleep.</div>
-
 <pre><code>RTC_DATA_ATTR int bootCount = 0;</code></pre>
-  <div class="explanation"><code>RTC_DATA_ATTR</code> tells the ESP32 to store the <code>bootCount</code> number in a special memory that does not get erased when the device goes to sleep.</div>
+  <div class="explanation"><code>RTC_DATA_ATTR</code> tells the ESP32 to store the <code>bootCount</code> variable in a special low-power memory chip (the RTC) that does not get erased when the device goes to Deep Sleep.</div>
 
 <pre><code>void setup() {
-  Serial.begin(115200);
-  delay(1000);</code></pre>
-  <div class="explanation"><code>setup()</code> runs the moment the device wakes up. <code>Serial.begin</code> starts the text output to your computer so you can read the logs.</div>
-
-<pre><code>  esp_sleep_wakeup_cause_t wakeReason = esp_sleep_get_wakeup_cause();
+  esp_sleep_wakeup_cause_t wakeReason = esp_sleep_get_wakeup_cause();
   if (wakeReason != ESP_SLEEP_WAKEUP_EXT1) {
     goToDeepSleep();
     return;
   }</code></pre>
-  <div class="explanation">We ask the board <em>why</em> it woke up. If it wasn't woken up by <code>EXT1</code> (our external sensors), it was just a manual reboot, so we tell it to go to sleep.</div>
+  <div class="explanation"><code>setup()</code> runs the moment the device wakes up. We ask the board <em>why</em> it woke up using <code>esp_sleep_get_wakeup_cause()</code>. If it wasn't woken up by <code>EXT1</code> (our external sensors), it was just a manual reboot, so we tell it to go right back to sleep.</div>
 
 <pre><code>  uint64_t wakeupPins = esp_sleep_get_ext1_wakeup_status();
   String alertType = "Unknown";
@@ -67,32 +68,26 @@
   } else if (wakeupPins & (1ULL &lt;&lt; VIBRATION_SENSOR_PIN)) {
     alertType = "Vibration";
   }</code></pre>
-  <div class="explanation">We ask the board exactly <em>which</em> pin jolted it awake. We use bitwise math (<code>&amp;</code>) to check if the pin that woke it up was the Flame sensor or the Vibration sensor.</div>
+  <div class="explanation">We ask the board exactly <em>which</em> pin jolted it awake. We use bitwise math (<code>&amp;</code> and <code>&lt;&lt;</code>) to check if the binary 1 was on the Flame sensor pin or the Vibration sensor pin.</div>
 
 <pre><code>  if (initMicrophone()) {
     isRealThreat = verifyThreatAudio();
     deinitMicrophone();
   }</code></pre>
-  <div class="explanation">(Tier 3) We turn on the mic, run the <code>verifyThreatAudio</code> function (which asks the AI), and then immediately turn the mic off.</div>
-
-<pre><code>  if (!isRealThreat) {
-    goToDeepSleep();
-    return;
-  }</code></pre>
-  <div class="explanation">If the AI says it was just background noise, we cancel the alert and go to sleep.</div>
+  <div class="explanation">(Tier 3) We turn on the mic, run the <code>verifyThreatAudio</code> function (which asks the AI), and then immediately turn the mic off. If <code>isRealThreat</code> is false, we go to sleep.</div>
 
 <pre><code>  camera_fb_t *photo = NULL;
   if (initCamera()) {
     photo = capturePhoto();
   }</code></pre>
-  <div class="explanation">(Tier 4) If the AI confirms the threat, we initialize the camera and capture a photo. <code>camera_fb_t</code> is the memory type that holds the image.</div>
+  <div class="explanation">(Tier 4) If the AI confirms the threat, we initialize the camera and capture a photo. <code>camera_fb_t</code> is the memory type (Frame Buffer) that holds the image bytes.</div>
 
 <pre><code>  if (photo) {
     String message = "🚨 EDGEWAKE ALERT 🚨\nDanger Detected: " + alertType;
     sendAlertToTelegram(photo, message);
     esp_camera_fb_return(photo);
   }</code></pre>
-  <div class="explanation">(Tier 5) We build a text message string, send the photo and the message to Telegram, and then use <code>esp_camera_fb_return</code> to empty the image from memory so the board doesn't crash.</div>
+  <div class="explanation">(Tier 5) We build a text message string, send the photo to Telegram, and then use <code>esp_camera_fb_return</code> to safely empty the image from the memory chip so the board doesn't crash.</div>
 
 <pre><code>void goToDeepSleep() {
   uint64_t wakeMask = (1ULL &lt;&lt; FLAME_SENSOR_PIN) | (1ULL &lt;&lt; VIBRATION_SENSOR_PIN);
@@ -103,9 +98,9 @@
   delay(5000);
   esp_deep_sleep_start();
 }</code></pre>
-  <div class="explanation">We isolate the microphone pin so electricity doesn't leak out of it while sleeping. We <code>delay(5000)</code> to wait 5 seconds before sleeping, which gives the sensors time to calm down so they don't immediately wake the board up again. Then we put it to sleep!</div>
+  <div class="explanation">We isolate the microphone pin so electricity doesn't leak out of it while sleeping. We <code>delay(5000)</code> to wait 5 seconds before sleeping, which gives the physical sensors time to calm down so they don't immediately wake the board up again. Then we put it to sleep!</div>
 
-  <h3>2. The Artificial Intelligence (<code>audio_utils.h</code>)</h3>
+  <h3>3. The Artificial Intelligence (<code>audio_utils.h</code>)</h3>
 
 <pre><code>const i2s_config_t i2s_config = {
   .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
@@ -115,24 +110,43 @@
 
 <pre><code>int total_samples = 32000;
 int16_t *audioBuffer = (int16_t *)ps_malloc(total_samples * sizeof(int16_t));</code></pre>
-  <div class="explanation">16,000 samples per second * 2 seconds = 32,000 samples. We use <code>ps_malloc</code> to grab memory on the special extra memory chip (PSRAM).</div>
+  <div class="explanation">16,000 samples per second * 2 seconds = 32,000 samples. We use <code>ps_malloc</code> to grab memory on the special extra memory chip (PSRAM) because standard RAM is too small.</div>
 
 <pre><code>  for (int i = 0; i &lt; total_samples; i += 512) {
     i2s_read(I2S_PORT, &amp;audioBuffer[i], 512 * sizeof(int16_t), &amp;bytesRead, portMAX_DELAY);
   }</code></pre>
-  <div class="explanation">We rapidly pull tiny chunks of audio data (512 samples at a time) from the microphone and fill up our memory buffer until we have 2 seconds of audio.</div>
+  <div class="explanation">We rapidly pull tiny chunks of audio data (512 samples at a time) from the microphone via I2S and fill up our memory buffer until we have 2 seconds of audio.</div>
 
 <pre><code>  signal_t signal;
   numpy::signal_from_buffer(audioBuffer, total_samples, &amp;signal);
   ei_impulse_result_t result = { 0 };
   run_classifier(&amp;signal, &amp;result, false);</code></pre>
-  <div class="explanation">We wrap the audio buffer into a "signal" that Edge Impulse understands, and then run <code>run_classifier()</code>, which feeds the audio into the Neural Network AI model.</div>
+  <div class="explanation">We wrap the audio buffer into a "signal" that Edge Impulse understands, and then run <code>run_classifier()</code>, which feeds the audio through the Convolutional Neural Network (CNN) AI model.</div>
 
 <pre><code>    if (label == "fire") fireScore = score;
     if (label == "chainsaw") chainsawScore = score;</code></pre>
-  <div class="explanation">The AI gives us a score between 0.0 (0% sure) and 1.0 (100% sure) for every sound it knows. We grab the scores for fire and chainsaw.</div>
+  <div class="explanation">The AI gives us a score between 0.0 (0% sure) and 1.0 (100% sure) for every sound it knows. We grab the scores for fire and chainsaw. If they are over 0.60 (60%), it triggers the camera.</div>
 
-  <h3>3. Telegram Upload (<code>telegram.h</code>)</h3>
+  <h3>4. Camera Utilities (<code>camera_utils.h</code>)</h3>
+
+<pre><code>  config.pixel_format = PIXFORMAT_JPEG;
+  if (psramFound()) {
+    config.frame_size   = FRAMESIZE_SVGA;
+    config.jpeg_quality = 10;</code></pre>
+  <div class="explanation">We tell the camera to output a standard JPEG file. We check if the board has extra memory (<code>psramFound()</code>), and if so, we set the resolution to 800x600 (SVGA) with a high JPEG quality setting of 10.</div>
+
+<pre><code>  pinMode(FLASH_LED_PIN, OUTPUT);
+  digitalWrite(FLASH_LED_PIN, HIGH);
+  delay(150);</code></pre>
+  <div class="explanation">Before taking a picture, we turn on the bright white LED (Flash) and wait 150 milliseconds for the light to reach full brightness so the forest isn't dark.</div>
+
+<pre><code>  camera_fb_t *discard = esp_camera_fb_get();
+  if (discard) esp_camera_fb_return(discard);
+
+  camera_fb_t *fb = esp_camera_fb_get();</code></pre>
+  <div class="explanation"><strong>Crucial step:</strong> We take a photo and immediately throw it away (<code>discard</code>). We do this because the camera's auto-exposure algorithm takes a fraction of a second to adjust to the bright LED flash. The second photo (<code>fb</code>) will be perfectly exposed.</div>
+
+  <h3>5. Telegram Upload (<code>telegram.h</code>)</h3>
 
 <pre><code>  WiFiClientSecure client;
   client.setInsecure();
@@ -145,7 +159,7 @@ int16_t *audioBuffer = (int16_t *)ps_malloc(total_samples * sizeof(int16_t));</c
 <pre><code>  client.print(head);                  // Send text &amp; headers
   client.write(fb-&gt;buf, fb-&gt;len);      // Send the actual image bytes
   client.print(tail);                  // Send the closing boundary</code></pre>
-  <div class="explanation">This is the most important part of the file. Instead of loading the entire request into RAM (which causes a crash), we "stream" it. We send the text, then we push the raw image bytes directly from the camera (<code>fb-&gt;buf</code>), and then we send the tail.</div>
+  <div class="explanation"><strong>Crucial step:</strong> Instead of loading the entire request into RAM at once (which crashes the ESP32), we "stream" it. We send the text, then we push the raw image bytes directly from the camera buffer (<code>fb-&gt;buf</code>), and then we send the tail.</div>
 
 </div>
 </body>
