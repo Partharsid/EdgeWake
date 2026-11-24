@@ -80,3 +80,7 @@ See [`docs/WIRING_GUIDE.md`](docs/WIRING_GUIDE.md) for the complete simple wirin
 ## License
 
 MIT — Use it, modify it, deploy it. Just keep the forests safe. 🌲
+
+---
+
+Built by [Parth Arsid](https://partharsid.dev), edge AI and full-stack engineer.
